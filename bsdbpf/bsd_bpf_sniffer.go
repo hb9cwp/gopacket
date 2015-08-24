@@ -175,13 +175,17 @@ func (b *BPFSniffer) pickBpfDevice() {
 
 func (b *BPFSniffer) ReadPacketData() ([]byte, gopacket.CaptureInfo, error) {
 	var err error
+	//fmt.Printf("before if:  ReadBufLen=%v  lastReadLen=%v  readBytesConsumed=%v \n", b.options.ReadBufLen, b.lastReadLen, b.readBytesConsumed)
 	if b.readBytesConsumed >= b.lastReadLen {
 		b.readBytesConsumed = 0
 		b.readBuffer = make([]byte, b.options.ReadBufLen)
-		b.lastReadLen, err = syscall.Read(b.fd, b.readBuffer)
-		if err != nil {
-			b.lastReadLen = 0
-			return nil, gopacket.CaptureInfo{}, err
+		for b.lastReadLen= 0; b.lastReadLen ==0; {
+			b.lastReadLen, err = syscall.Read(b.fd, b.readBuffer);
+			//fmt.Printf("after Read():  lastReadLen=%v  err=%v \n", b.lastReadLen, err)
+			if err != nil {
+				b.lastReadLen = 0
+				return nil, gopacket.CaptureInfo{}, err
+			}
 		}
 	}
 	hdr := (*unix.BpfHdr)(unsafe.Pointer(&b.readBuffer[b.readBytesConsumed]))
@@ -193,6 +197,7 @@ func (b *BPFSniffer) ReadPacketData() ([]byte, gopacket.CaptureInfo, error) {
 		CaptureLength: len(rawFrame),
 		Length:        len(rawFrame),
 	}
+	//fmt.Printf("captureInfo=%v \n", captureInfo)
 	return rawFrame, captureInfo, nil
 }
 
