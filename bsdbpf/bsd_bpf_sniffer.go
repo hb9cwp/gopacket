@@ -178,7 +178,7 @@ func (b *BPFSniffer) ReadPacketData() ([]byte, gopacket.CaptureInfo, error) {
 	if b.readBytesConsumed >= b.lastReadLen {
 		b.readBytesConsumed = 0
 		b.readBuffer = make([]byte, b.options.ReadBufLen)
-		for b.lastReadLen= 0; b.lastReadLen ==0; {
+		for b.lastReadLen= 0; b.lastReadLen ==0; {	// skip EOF, e.g. empty frames
 			b.lastReadLen, err = syscall.Read(b.fd, b.readBuffer);
 			if err != nil {
 				b.lastReadLen = 0
