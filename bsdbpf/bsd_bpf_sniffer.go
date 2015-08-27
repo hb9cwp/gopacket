@@ -57,6 +57,10 @@ type Options struct {
 	// as provided, to the wire.
 	// The default is true.
 	PreserveLinkAddr bool
+	// RFilterProgram 
+	RFilterProgram []syscall.BpfInsn
+	// RFilter 
+	RFilter string
 }
 
 var defaultOptions = Options{
@@ -66,6 +70,8 @@ var defaultOptions = Options{
 	Promisc:          true,
 	Immediate:        true,
 	PreserveLinkAddr: true,
+	RFilterProgram:   []syscall.BpfInsn{},
+	RFilter:          "",
 }
 
 // BPFSniffer is a struct used to track state of a BSD BPF ethernet sniffer
@@ -137,7 +143,7 @@ func NewBPFSniffer(iface string, options *Options) (*BPFSniffer, error) {
 		}
 	}
 
-        filDrop, err:= BpfFilDrop(sniffer.fd)
+        filDrop, err:= bpfFilDrop(sniffer.fd)
         if err != nil {
 		return nil, err
         }
@@ -152,7 +158,7 @@ func NewBPFSniffer(iface string, options *Options) (*BPFSniffer, error) {
 		return nil, err
 	}
 
-        filDrop, err= BpfFilDrop(sniffer.fd)
+        filDrop, err= bpfFilDrop(sniffer.fd)
         if err != nil {
 		return nil, err
         }
@@ -227,11 +233,26 @@ func (b *BPFSniffer) GetReadBufLen() int {
 	return b.options.ReadBufLen
 }
 
+/*
 // Fd returns the BPF file descriptor, as required by SetBPF() to set filter program, etc.
 // from golang/go/src/syscall/bpf_bsd.go )
 func (b *BPFSniffer) Fd() int {
         return b.fd
 }
+*/
+
+func (b *BPFSniffer) SetBpfReadFilterProgram(fp []syscall.BpfInsn) error {
+        if err := syscall.SetBpf(b.fd, fp); err != nil {
+		//log.Fatal("unable to set filter program")
+		return err
+        }
+	return nil
+}
+
+//func (b *BPFSniffer) SetBpfReadFilter(fs string) error {
+//	//XXX compiler from filter string to filter program not yet implemented
+//	return 
+//}
 
 /*
 func BpfFilDrop(fd int) (int, error) {
@@ -243,7 +264,7 @@ func BpfFilDrop(fd int) (int, error) {
 	return &f, nil
 }
 */
-func BpfFilDrop(fd int) (int, error) {
+func bpfFilDrop(fd int) (int, error) {
         var f int
         _, _, err := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), syscall.BIOCSFILDROP, uintptr(unsafe.Pointer(&f)))
         if err != 0 {
@@ -269,4 +290,3 @@ func setBpfFilDrop(fd, f int) error {
 	}
 	return nil
 }
-
