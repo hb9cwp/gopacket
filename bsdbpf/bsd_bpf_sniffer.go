@@ -57,28 +57,15 @@ type Options struct {
 	// as provided, to the wire.
 	// The default is true.
 	PreserveLinkAddr bool
-	// RFilterProgram 
-	RFilterProgram []syscall.BpfInsn
-	// RFilter 
-	RFilter string
-	// WFilterProgram 
-	WFilterProgram []syscall.BpfInsn
-	// WFilter 
-	WFilter string
 }
 
 var defaultOptions = Options{
 	BPFDeviceName:    "",
 	ReadBufLen:       32767,
-	//ReadBufLen:       0,
 	Timeout:          nil,
 	Promisc:          true,
 	Immediate:        true,
 	PreserveLinkAddr: true,
-	RFilterProgram:   []syscall.BpfInsn{},
-	RFilter:          "",
-	WFilterProgram:   []syscall.BpfInsn{},
-	WFilter:          "",
 }
 
 // BPFSniffer is a struct used to track state of a BSD BPF ethernet sniffer
@@ -189,17 +176,6 @@ func NewBPFSniffer(iface string, options *Options) (*BPFSniffer, error) {
 		}
 	}
 
-        //if err := handle.SetBpfReadFilterProgram(bpfHTTPFilterProg); err != nil {
-        //        log.Fatal(err)
-        //}
-	if sniffer.options.RFilterProgram !=nil {
-		err := syscall.SetBpf(sniffer.fd, sniffer.options.RFilterProgram);
-		if err != nil {
-                	//log.Fatal("unable to set filter program")
-                	return nil, err
-		}
-        }
-
         // Flushes the buffer of incoming packets and resets the statistics
         err = syscall.FlushBpf(sniffer.fd)
 	if err != nil {
@@ -245,13 +221,31 @@ func (b *BPFSniffer) ReadPacketData() ([]byte, gopacket.CaptureInfo, error) {
 	}
 	hdr := (*unix.BpfHdr)(unsafe.Pointer(&b.readBuffer[b.readBytesConsumed]))
 	frameStart := b.readBytesConsumed + int(hdr.Hdrlen)
-	b.readBytesConsumed += bpfWordAlign(int(hdr.Hdrlen) + int(hdr.Caplen))
 	rawFrame := b.readBuffer[frameStart : frameStart+int(hdr.Caplen)]
+	b.readBytesConsumed += bpfWordAlign(int(hdr.Hdrlen) + int(hdr.Caplen))
+
 	captureInfo := gopacket.CaptureInfo{
+		// time the packet was captured, if that is known.
 		Timestamp:     time.Unix(int64(hdr.Tstamp.Sec), int64(hdr.Tstamp.Usec)*1000),
-		CaptureLength: len(rawFrame),
-		Length:        len(rawFrame),
+		// total number of bytes read off of the wire
+		//CaptureLength: len(rawFrame),
+		CaptureLength:   int(hdr.Caplen),
+		// size of the original packet, should be >=CaptureLength
+		//Length:        len(rawFrame),
+		Length:          int(hdr.Datalen),
 	}
+	if captureInfo.Length < captureInfo.CaptureLength {
+		fmt.Print("<")
+		return nil, gopacket.CaptureInfo{}, err
+	}
+	//fmt.Printf("hdr= %#v\n", hdr)
+	// hdr= &unix.BpfHdr{Tstamp:unix.BpfTimeval{Sec:0x55df4eb7, Usec:0x6ccdc}, Caplen:0x36, 
+	//  Datalen:0x36, Hdrlen:0x12, Pad_cgo_0:[2]uint8{0x0, 0x0}}
+
+	fmt.Printf("captureInfo= %#v\n", captureInfo)
+	// captureInfo= gopacket.CaptureInfo{Timestamp:time.Time{sec:63576294839, nsec:445660000, 
+	//  loc:(*time.Location)(0x851bb20)}, CaptureLength:54, Length:54}
+
 	return rawFrame, captureInfo, nil
 }
 
@@ -260,6 +254,7 @@ func (b *BPFSniffer) GetReadBufLen() int {
 	return b.options.ReadBufLen
 }
 
+// SetBpfReadFilterProgram set up BPF read filter program.
 func (b *BPFSniffer) SetBpfReadFilterProgram(fp []syscall.BpfInsn) error {
         if err := syscall.SetBpf(b.fd, fp); err != nil {
 		//log.Fatal("unable to set filter program")
@@ -268,10 +263,25 @@ func (b *BPFSniffer) SetBpfReadFilterProgram(fp []syscall.BpfInsn) error {
 	return nil
 }
 
-//func (b *BPFSniffer) SetBpfReadFilter(fs string) error {
-//	//XXX compiler from filter string to filter program not yet implemented
-//	return 
-//}
+// CompileBpfExpression compiles filter expression to filter program.
+func (b *BPFSniffer) CompileBpfExpression(fs string) ([]syscall.BpfInsn, error) {
+	panic(fmt.Sprintf("bsdbpf.CompileBpfExpression() not yet implemented"))	// XXX
+	return []syscall.BpfInsn{}, nil
+}
+
+// SetBpfReadFilter set up BPF read filter program.
+func (b *BPFSniffer) SetBpfReadFilter(fs string) error {
+	fp, err:= b.CompileBpfExpression(fs)
+	if err != nil {
+		return err
+	}
+	err= b.SetBpfReadFilterProgram(fp)
+	return err
+}
+
+
+// XXX move stuff below to
+//  https://github.com/golang/go/blob/master/src/syscall/bpf_bsd.go
 
 /*
 func BpfFilDrop(fd int) (int, error) {
