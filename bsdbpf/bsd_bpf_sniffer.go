@@ -112,7 +112,7 @@ func NewBPFSniffer(iface string, options *Options) (*BPFSniffer, error) {
 			return nil, err
 		}
 	}
-	fmt.Printf("ReadBufLen= %v\n", sniffer.options.ReadBufLen)
+	//fmt.Printf("ReadBufLen= %v\n", sniffer.options.ReadBufLen)
 	sniffer.readBuffer = make([]byte, sniffer.options.ReadBufLen)
 
 	err = syscall.SetBpfInterface(sniffer.fd, sniffer.sniffDeviceName)
@@ -137,27 +137,6 @@ func NewBPFSniffer(iface string, options *Options) (*BPFSniffer, error) {
 			return nil, err
 		}
 	}
-
-        filDrop, err:= bpfFilDrop(sniffer.fd)
-        if err != nil {
-		return nil, err
-        }
-        fmt.Println("filDrop= ", filDrop)
-
-	// syscall.BIOCSFILDROP: append definition of SetBpfFilDrop() to 
-	//  https://github.com/golang/go/blob/master/src/syscall/bpf_bsd.go
-	// temporarily use locally defined setBpfFilDrop()
-	//err = syscall.SetBpfFilDrop(sniffer.fd, enable)
-	err = setBpfFilDrop(sniffer.fd, enable)
-	if err != nil {
-		return nil, err
-	}
-
-        filDrop, err= bpfFilDrop(sniffer.fd)
-        if err != nil {
-		return nil, err
-        }
-        fmt.Println("filDrop= ", filDrop)
 
 	if sniffer.options.PreserveLinkAddr {
 		// preserves the link level source address...
@@ -207,16 +186,17 @@ func (b *BPFSniffer) ReadPacketData() ([]byte, gopacket.CaptureInfo, error) {
 	if b.readBytesConsumed >= b.lastReadLen {
 		b.readBytesConsumed = 0
 		b.readBuffer = make([]byte, b.options.ReadBufLen)
-		for b.lastReadLen= 0; b.lastReadLen ==0; {	// skip empty frames, e.g. EOF returned by OpenBSD
+		// OpenBSD's read(2) returns empty frames, e.g. EOF after timeouts, etc.
+		for b.lastReadLen= 0; b.lastReadLen ==0; {	
 			b.lastReadLen, err = syscall.Read(b.fd, b.readBuffer);
 			if err != nil {
 				b.lastReadLen = 0
-				fmt.Print("e")
+				//fmt.Print("e")
 				return nil, gopacket.CaptureInfo{}, err
 			}
-			if b.lastReadLen ==0 {
-				fmt.Print(".")
-			}
+			//if b.lastReadLen ==0 {
+			//	fmt.Print(".")
+			//}
 		}
 	}
 	hdr := (*unix.BpfHdr)(unsafe.Pointer(&b.readBuffer[b.readBytesConsumed]))
@@ -228,24 +208,16 @@ func (b *BPFSniffer) ReadPacketData() ([]byte, gopacket.CaptureInfo, error) {
 		// time the packet was captured, if that is known.
 		Timestamp:     time.Unix(int64(hdr.Tstamp.Sec), int64(hdr.Tstamp.Usec)*1000),
 		// total number of bytes read off of the wire
-		//CaptureLength: len(rawFrame),
 		CaptureLength:   int(hdr.Caplen),
 		// size of the original packet, should be >=CaptureLength
-		//Length:        len(rawFrame),
 		Length:          int(hdr.Datalen),
 	}
 	if captureInfo.Length < captureInfo.CaptureLength {
-		fmt.Print("<")
+		//fmt.Print("<")
 		return nil, gopacket.CaptureInfo{}, err
 	}
 	//fmt.Printf("hdr= %#v\n", hdr)
-	// hdr= &unix.BpfHdr{Tstamp:unix.BpfTimeval{Sec:0x55df4eb7, Usec:0x6ccdc}, Caplen:0x36, 
-	//  Datalen:0x36, Hdrlen:0x12, Pad_cgo_0:[2]uint8{0x0, 0x0}}
-
-	fmt.Printf("captureInfo= %#v\n", captureInfo)
-	// captureInfo= gopacket.CaptureInfo{Timestamp:time.Time{sec:63576294839, nsec:445660000, 
-	//  loc:(*time.Location)(0x851bb20)}, CaptureLength:54, Length:54}
-
+	//fmt.Printf("captureInfo= %#v\n", captureInfo)
 	return rawFrame, captureInfo, nil
 }
 
@@ -254,12 +226,17 @@ func (b *BPFSniffer) GetReadBufLen() int {
 	return b.options.ReadBufLen
 }
 
-// SetBpfReadFilterProgram set up BPF read filter program.
+// SetBpfReadFilterProgram sets up BPF read filter program.
 func (b *BPFSniffer) SetBpfReadFilterProgram(fp []syscall.BpfInsn) error {
-        if err := syscall.SetBpf(b.fd, fp); err != nil {
+	err := syscall.SetBpf(b.fd, fp)
+	if err != nil {
 		//log.Fatal("unable to set filter program")
 		return err
         }
+	err = setBpfFilDrop(b.fd, 1)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -269,7 +246,7 @@ func (b *BPFSniffer) CompileBpfExpression(fs string) ([]syscall.BpfInsn, error) 
 	return []syscall.BpfInsn{}, nil
 }
 
-// SetBpfReadFilter set up BPF read filter program.
+// SetBpfReadFilter sets up BPF read filter expression.
 func (b *BPFSniffer) SetBpfReadFilter(fs string) error {
 	fp, err:= b.CompileBpfExpression(fs)
 	if err != nil {
